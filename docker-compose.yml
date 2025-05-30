@@ -1,0 +1,9 @@
+version: '3'
+
+services:
+  wasmart:
+    image: jonaszl/paga-pe
+    ports:
+      - "3000:80"
+
+
