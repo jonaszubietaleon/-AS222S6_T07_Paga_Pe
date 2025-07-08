@@ -1,16 +1,18 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
 import { ethers } from "ethers"
+import { useCallback, useEffect, useState } from "react"
 import Swal from "sweetalert2"
 import "./App.css"
-import Home from "./components/home"
+import Chatbot from "./components/Chatbot/Chatbot"
+import ContactManager from "./components/Contact/ContactManager"
 import Dashboard from "./components/Dashboard/Dashboard"
 import TransactionHistory from "./components/History/TransactionHistory"
-import ContactManager from "./components/Contact/ContactManager"
-import TransactionForm from "./components/TransactionForm/TransactionForm"
+import Home from "./components/home"
 import Navbar from "./components/Navbar/Navbar"
-import Chatbot from "./components/Chatbot/Chatbot"
+import TransactionForm from "./components/TransactionForm/TransactionForm"
+import WalletConnect from "./components/wallet-connect.js"
+import "./components/WalletConnect.css"
 
 function App() {
   // Estados de la aplicación
@@ -24,6 +26,7 @@ function App() {
   const [currentPage, setCurrentPage] = useState("home")
   const [menuOpen, setMenuOpen] = useState(false)
   const [isUpdatingBalance, setIsUpdatingBalance] = useState(false)
+  const [showWalletModal, setShowWalletModal] = useState(false)
 
   // Función para mostrar notificaciones con SweetAlert2
   const showNotification = useCallback((message, type) => {
@@ -39,7 +42,6 @@ function App() {
       background: type === "success" ? "#d4edda" : type === "error" ? "#f8d7da" : "#d1ecf1",
       color: type === "success" ? "#155724" : type === "error" ? "#721c24" : "#0c5460",
     }
-
     Swal.fire(config)
   }, [])
 
@@ -62,28 +64,20 @@ function App() {
     setNetwork(networks[chainId] || "Red Desconocida")
   }, [])
 
-  // Actualizar balance - CORREGIDO para ethers v5
+  // Actualizar balance
   const updateBalance = useCallback(
     async (address, showErrors = false) => {
       if (!provider || isUpdatingBalance || !address) return false
-
       setIsUpdatingBalance(true)
       try {
-        // Pequeño delay para asegurar que el provider esté listo
         await new Promise((resolve) => setTimeout(resolve, 300))
-
         const balance = await provider.getBalance(address)
-
-        // Usar ethers v5 sintaxis
         const formattedBalance = ethers.utils.formatEther(balance)
-
         setBalance(formattedBalance)
         console.log("Balance actualizado:", formattedBalance)
         return true
       } catch (error) {
         console.error("Error actualizando balance:", error)
-
-        // Solo mostrar error si se solicita explícitamente y no es un error de red
         if (showErrors && !error.message.includes("network") && !error.message.includes("chain")) {
           showNotification("No se pudo actualizar el saldo", "warning")
         }
@@ -95,34 +89,25 @@ function App() {
     [provider, isUpdatingBalance, showNotification],
   )
 
-  // Manejar cambio de red - CORREGIDO para ethers v5
+  // Manejar cambio de red
   const handleChainChanged = useCallback(
     async (chainId) => {
       try {
         console.log("Cambio de red detectado:", chainId)
-
-        // Actualizar el nombre de la red inmediatamente
         handleNetworkName(chainId)
-
-        // Crear nuevo provider y signer
         const newProvider = new ethers.providers.Web3Provider(window.ethereum)
         setProvider(newProvider)
         const newSigner = newProvider.getSigner()
         setSigner(newSigner)
-
-        // Actualizar balance solo si hay una cuenta conectada
         if (account) {
-          // Usar setTimeout para evitar conflictos
           setTimeout(async () => {
             try {
               const balance = await newProvider.getBalance(account)
-              // Usar ethers v5 sintaxis
               const formattedBalance = ethers.utils.formatEther(balance)
               setBalance(formattedBalance)
               console.log("Balance actualizado después del cambio de red:", formattedBalance)
             } catch (error) {
               console.error("Error actualizando balance después del cambio de red:", error)
-              // No mostrar notificación aquí
             }
           }, 1000)
         }
@@ -142,7 +127,6 @@ function App() {
         setCurrentPage("home")
       } else {
         setAccount(accounts[0])
-        // Actualizar balance con delay, sin mostrar errores
         setTimeout(() => {
           updateBalance(accounts[0], false)
         }, 500)
@@ -169,13 +153,15 @@ function App() {
     }
   }, [account])
 
-  // Conectar wallet - CORREGIDO para ethers v5
+  // FUNCIÓN PRINCIPAL PARA CONECTAR WALLET - IMPLEMENTADA
   const connectWallet = async () => {
     try {
       if (!window.ethereum) {
         showNotification("Por favor instala MetaMask para usar esta aplicación", "error")
         return false
       }
+
+      console.log("Iniciando conexión con MetaMask...")
 
       const provider = new ethers.providers.Web3Provider(window.ethereum)
       setProvider(provider)
@@ -184,6 +170,7 @@ function App() {
 
       const signer = provider.getSigner()
       setSigner(signer)
+
       const address = await signer.getAddress()
       setAccount(address)
 
@@ -194,12 +181,10 @@ function App() {
       setTimeout(async () => {
         try {
           const balance = await provider.getBalance(address)
-          // Usar ethers v5 sintaxis
           const formattedBalance = ethers.utils.formatEther(balance)
           setBalance(formattedBalance)
         } catch (error) {
           console.error("Error obteniendo balance inicial:", error)
-          // No mostrar notificación aquí
         }
       }, 500)
 
@@ -210,6 +195,7 @@ function App() {
       showNotification("Wallet conectada correctamente", "success")
       return true
     } catch (error) {
+      console.error("Error conectando wallet:", error)
       showNotification("Error al conectar con MetaMask: " + error.message, "error")
       return false
     }
@@ -280,23 +266,17 @@ function App() {
     }
   }
 
-  // Enviar transacción - CORREGIDO para ethers v5
+  // Enviar transacción
   const sendTransaction = async (transactionData) => {
     try {
       if (!signer) throw new Error("No hay una billetera conectada")
-
       const { recipient, amount } = transactionData
-
-      // Usar ethers v5 sintaxis
       const amountInWei = ethers.utils.parseEther(amount.toString())
-
       const tx = await signer.sendTransaction({
         to: recipient,
         value: amountInWei,
       })
-
       await tx.wait()
-
       const newTransaction = {
         hash: tx.hash,
         from: account,
@@ -305,16 +285,12 @@ function App() {
         timestamp: Date.now(),
         network: network,
       }
-
       const updatedTransactions = [...transactions, newTransaction]
       setTransactions(updatedTransactions)
       localStorage.setItem(`transactions_${account}`, JSON.stringify(updatedTransactions))
-
-      // Actualizar balance después de la transacción
       setTimeout(() => {
         updateBalance(account, false)
       }, 2000)
-
       showNotification("Transacción completada con éxito", "success")
       return true
     } catch (error) {
@@ -328,16 +304,13 @@ function App() {
     async (chainId, networkParams) => {
       try {
         if (!window.ethereum) throw new Error("MetaMask no está instalado")
-
         console.log("Intentando cambiar a red:", chainId)
-
         try {
           await window.ethereum.request({
             method: "wallet_switchEthereumChain",
             params: [{ chainId }],
           })
         } catch (switchError) {
-          // Error 4902 significa que la red no está agregada
           if (switchError.code === 4902 && networkParams) {
             try {
               await window.ethereum.request({
@@ -352,7 +325,6 @@ function App() {
             throw switchError
           }
         }
-
         return true
       } catch (error) {
         console.error("Error al cambiar de red:", error)
@@ -377,12 +349,11 @@ function App() {
   // Renderizar página actual
   const renderCurrentPage = () => {
     if (!account && currentPage !== "home") {
-      return <Home connectWallet={connectWallet} setCurrentPage={handlePageChange} />
+      return <Home connectWallet={showWalletConnectModal} setCurrentPage={handlePageChange} />
     }
-
     switch (currentPage) {
       case "home":
-        return <Home connectWallet={connectWallet} setCurrentPage={handlePageChange} />
+        return <Home connectWallet={showWalletConnectModal} setCurrentPage={handlePageChange} />
       case "dashboard":
         return (
           <Dashboard
@@ -412,6 +383,16 @@ function App() {
     }
   }
 
+  // NUEVA FUNCIÓN para mostrar el modal de conexión
+  const showWalletConnectModal = () => {
+    setShowWalletModal(true)
+  }
+
+  // NUEVA FUNCIÓN para cerrar el modal
+  const closeWalletModal = () => {
+    setShowWalletModal(false)
+  }
+
   return (
     <div className="app">
       {account && (
@@ -429,6 +410,9 @@ function App() {
       )}
       <main className={`main-content ${!account ? "full-height" : ""}`}>{renderCurrentPage()}</main>
       <Chatbot />
+
+      {/* COMPONENTE MODAL */}
+      <WalletConnect connectWallet={connectWallet} onClose={closeWalletModal} isOpen={showWalletModal} />
     </div>
   )
 }
